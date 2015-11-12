@@ -66,7 +66,7 @@ initial
 	//#4 data_holder = 8'b00010001;
 	//#10 data_holder = 8'b00100010;
 	//#10 data_holder = 8'b00110011;
-	#10 write = 1'b0;
+	#20 write = 1'b0;
 	
 	#15 oe = 1'b1;
 	#1 address_bus = 4'h0001;

@@ -53,9 +53,11 @@ output hit, state;
 
 // ----- Bidirectional Ports -----
 inout [DATA_BUS_WIDTH-1:0] data_bus;
+wire [DATA_BUS_WIDTH-1:0] data_bus;
 
 // ------ Input Ports Data Type ------
 wire clock, reset, write, read, oe;
+wire [ADDRESS_BUS_WIDTH-1:0] address_bus;
 
 // ------ Output Ports Data Type ------
 reg hit;
@@ -132,53 +134,57 @@ function [NUMSTATES-1:0] cache_fsm;
 		WAIT:
 		begin
 			if(read && !write)
-				begin
+			begin
+				$display("read value = %b", read);
 				cache_fsm = FETCH_DATA;
-				end
-			if(!read && write)
-				begin
-				dumb_counter = 0;
+				$display("next state = %b", cache_fsm);
+			end
+			else if(!read && write)
+			begin
+				$display("write value = %b", write);
+				//dumb_counter = 0;
 				cache_fsm = FETCH_DATA;
-				end
+			end
 			else
-				begin
+			begin
+				$display("Waiting...");
 				cache_fsm = WAIT;
-				end
+			end
 		end
 		FETCH_DATA:
 		begin
 			if(read && !write)
 			begin
 				if(~valid_bits[index])	// cache miss
-					begin
-						cache_fsm = READ_MISS;
-					end
+				begin
+					cache_fsm = READ_MISS;
+				end
 				else if (tags[index] == tag) // tag bits match (HIT!)
-					begin
-						cache_fsm = READ_HIT;
-					end
+				begin
+					cache_fsm = READ_HIT;
+				end
 				else // another miss, occupied by another 
-					begin
-						cache_fsm = READ_MISS;
-					end
+				begin
+					cache_fsm = READ_MISS;
+				end
 			end
 			if(!read && write)
 			begin
 				if(valid_bits[index])	//if Valid bit set /* slot occupied */
 				begin
 					if (tags[index] == tag) //if Tag bits match /* cache hit! */
-						begin
-							cache_fsm = WRITE_HIT;
-						end
+					begin
+						cache_fsm = WRITE_HIT;
+					end
 					else //else /* occupied by another */
-						begin
-							cache_fsm = WRITE_MISS;
-						end
+					begin
+						cache_fsm = WRITE_MISS;
+					end
 				end
 				else /* slot empty */
-					begin
+				begin
 					cache_fsm = WRITE_MISS;
-					end
+				end
 			end
 		end
 //		READ_BUS:
@@ -228,11 +234,13 @@ function [NUMSTATES-1:0] cache_fsm;
 endfunction
 		
 // ----- Seq Logic ------
-always @ (posedge clock or reset)
+always @ (negedge clock or reset)
 begin
-	if (reset == 1'b1) begin
+	if (reset == 1'b1) 
+	begin
 		state <= WAIT;
-	end else begin
+	end else 
+	begin
 		state <= next_state;
 	end
 end
@@ -247,6 +255,8 @@ begin : OUTPUT_LOGIC
 		end
 		FETCH_DATA:
 		begin
+			data_holder = data_bus;
+			$display("read %b off the bus", data_holder);
 		end
 //		READ_BUS:
 //		begin
@@ -306,10 +316,11 @@ begin : OUTPUT_LOGIC
 			//cast out existing cache line (“victim”)
 			// ASSUMPTION: Write Through policy - Memory is up-to-date
 			//read cache line from memory
+			
 			//write Tag bits
-			//tags[index] = tag;
+			tags[index] = tag;
 			//write data to cache
-			//data_memory[index] = data_holder; 
+			data_memory[index] = data_holder; 
 			//write data to memory - or - set “dirty” bit
 		end
 //		OUTPUT_BUS:

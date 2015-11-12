@@ -1,6 +1,6 @@
 //---------------------------
 // ECE 485 HW 4 CACHE MODULE
-// James Schiffer
+// James Schiffer & Grant Cazhina
 // 2-Way Set Associative Cache
 // USING 
 // Assignment Description:
@@ -24,8 +24,7 @@ module cache(
 			 // Shared Bus
 			 data_bus,
 			 // waveform variable 
-			 state,
-			 count
+			 state
 			);
 
 // Cache Parameters
@@ -50,7 +49,7 @@ input  clock, reset, write, read, oe;
 input [ADDRESS_BUS_WIDTH-1:0] address_bus;
 
 // --- Output Ports ----
-output hit, state, count;
+output hit, state;
 
 // ----- Bidirectional Ports -----
 inout [DATA_BUS_WIDTH-1:0] data_bus;
@@ -63,18 +62,18 @@ reg hit;
 
 // ----- Internal Constraints -----
 
-parameter NUMSTATES = 8;
+parameter NUMSTATES = 6;
 parameter DATA_BYTE_SIZE = 4;
 parameter TAG_WIDTH = 16 - 8 - 1;
 parameter CLKS_PER_TRANSFER = DATA_BYTE_SIZE;
-parameter 	WAIT 		= 8'b00000001,
-			FETCH_DATA 	= 8'b00000010,
-			READ_BUS 	= 8'b00000100,
-			READ_HIT 	= 8'b00001000,
-			READ_MISS 	= 8'b00010000,
-			WRITE_HIT 	= 8'b00100000,
-			WRITE_MISS 	= 8'b01000000,
-			OUTPUT_BUS	= 8'b10000000;
+parameter 	WAIT 		= 8'b000001,
+			FETCH_DATA 	= 8'b000010,
+			//READ_BUS 	= 8'b00000100,
+			READ_HIT 	= 8'b000100,
+			READ_MISS 	= 8'b001000,
+			WRITE_HIT 	= 8'b010000,
+			WRITE_MISS 	= 8'b100000;
+			//OUTPUT_BUS	= 8'b10000000;
 
 // ------ Internal Variables -------
 reg	[NUMSTATES-1:0]  state; 	 // Seq part of the FSM
@@ -83,13 +82,14 @@ reg [INDEX_WIDTH-1:0] index;
 reg [1:0] byte_select;
 reg [TAG_WIDTH-1:0] tag;
 integer i;
+integer dumb_counter = 0;
 
 // counter related
-wire	[3:0] count;
-reg 	counter_reset = 1'b0;
-counter my_counter(clock, counter_reset, count);
+// wire	[3:0] count;
+// reg 	counter_reset;
+// counter my_counter(clock, counter_reset, count);
 
-reg [7:0] data_holder [DATA_BYTE_SIZE-1:0];	// (DATA_BYTE_SIZE * 8) - 1
+reg [7:0] data_holder ;	// [DATA_BYTE_SIZE-1:0]
 
 //reg	[NUMSTATES-1:0] state; // Seq part of the FSM
 //wire[NUMSTATES-1:0] next_state; // Combo part of FSM	
@@ -97,17 +97,18 @@ reg [7:0] data_holder [DATA_BYTE_SIZE-1:0];	// (DATA_BYTE_SIZE * 8) - 1
 //cache memory related
 reg  [CACHE_SIZE-1:0] valid_bits;
 reg  [TAG_WIDTH-1:0] tags [0:CACHE_SIZE-1];
-reg  [7:0]  data_memory [DATA_BYTE_SIZE-1:0][0:CACHE_SIZE-1];  //(DATA_BYTE_SIZE * 8) - 1
+reg  [7:0]  data_memory [0:CACHE_SIZE-1];  //[DATA_BYTE_SIZE-1:0]
 
 
 // ------ Set initial state for outputs ---
 initial begin
 	hit <= 1'b0;
+//	counter_reset <= 1'b0;
 end
 
 // ------ Code Start Here ------
 
-assign data_bus = (read && oe && !write) ? data_holder[count] : 8'bz; 
+assign data_bus = (read && oe && !write) ? data_holder : 8'bz; 
 
 // Parse Address bus for cache components.
 always@(address_bus)
@@ -117,13 +118,13 @@ begin
 	byte_select = address_bus[2:0];
 end
 
-assign next_state = cache_fsm(state, count, read, write);
+assign next_state = cache_fsm(state, read, write);
 
 // ----- Function for Combo Logic -------
 function [NUMSTATES-1:0] cache_fsm;
 	//inputs 
 	input [NUMSTATES-1:0] 	curstate;
-	input [3:0]		count;
+//	input [3:0]		count;
 	input read;
 	input write;
 	
@@ -136,7 +137,8 @@ function [NUMSTATES-1:0] cache_fsm;
 				end
 			if(!read && write)
 				begin
-				cache_fsm = READ_BUS;
+				dumb_counter = 0;
+				cache_fsm = FETCH_DATA;
 				end
 			else
 				begin
@@ -179,19 +181,21 @@ function [NUMSTATES-1:0] cache_fsm;
 					end
 			end
 		end
-		READ_BUS:
-		begin
-			$display("COUNTER value = %b", );
-			//cache_fsm = READ_BUS;
-			 if(count == 1'b0011)
-			 begin
-				cache_fsm = FETCH_DATA;
-			 end
-		end
+//		READ_BUS:
+//		begin
+//			
+//			//cache_fsm = READ_BUS;
+//			 //dumb_counter = dumb_counter + 1; //if(count == 1'b0011)
+//			 //$display("COUNTER value = %d", dumb_counter);
+//			 if (dumb_counter == 3)
+//			 begin
+//				cache_fsm = FETCH_DATA;
+//			 end
+//		end
 		READ_HIT:
 		begin
 			// deliver data to CPU
-			cache_fsm = OUTPUT_BUS;
+			cache_fsm = WAIT;
 		end
 		READ_MISS:
 		begin
@@ -206,16 +210,16 @@ function [NUMSTATES-1:0] cache_fsm;
 		begin
 			cache_fsm = WAIT;
 		end
-		OUTPUT_BUS:
-		begin
-			// ASSUMPTION: Data depth is 4 bytes. Needs 4 clock cycles for each transfer.
-			//data_bus = data_holder[count];
-			// if count is three, the data transfer is complete. Go back to WAIT state. 
-			if(count == 1'b0011)
-			begin
-				cache_fsm = WAIT;
-			end
-		end
+//		OUTPUT_BUS:
+//		begin
+//			// ASSUMPTION: Data depth is 4 bytes. Needs 4 clock cycles for each transfer.
+//			//data_bus = data_holder[count];
+//			// if count is three, the data transfer is complete. Go back to WAIT state. 
+//			if(count == 1'b0011)
+//			begin
+//				cache_fsm = WAIT;
+//			end
+//		end
 		default:
 		begin
 			cache_fsm = WAIT;
@@ -244,32 +248,32 @@ begin : OUTPUT_LOGIC
 		FETCH_DATA:
 		begin
 		end
-		READ_BUS:
-		begin
-			data_holder[count] = data_bus;
-			
-			// make sure the counter reset is turned off.
-			if(counter_reset == 1'b1)
-			begin
-			
-				counter_reset <= 1'b0;
-			end
-			// If the counter reached 4, the data transfer is complete
-			// so reset the counter
-			if(count == 1'b0011)
-			begin
-				$display("RESETING COUNTER");
-				counter_reset <= 1'b1;
-			end
-		end
+//		READ_BUS:
+//		begin
+//			data_holder = data_bus;
+//			
+//			// make sure the counter reset is turned off.
+//			if(counter_reset == 1'b1)
+//			begin
+//			
+//				counter_reset <= 1'b0;
+//			end
+//			// If the counter reached 4, the data transfer is complete
+//			// so reset the counter
+//			if(count == 1'b0011)
+//			begin
+//				$display("RESETING COUNTER");
+//				counter_reset <= 1'b1;
+//			end
+//		end
 		READ_HIT:
 		begin
 			// deliver data to CPU
-			
-			for(i = 0; i < 4; i = i +1)
-			begin
-				data_holder[i] <= data_memory[i][index];
-			end
+			data_holder <= data_memory[index];
+			//for(i = 0; i < 4; i = i +1)
+			//begin
+			//	data_holder[i] <= data_memory[i][index];
+			//end
 			hit <= 1'b1;
 		end
 		READ_MISS:
@@ -287,10 +291,11 @@ begin : OUTPUT_LOGIC
 		begin
 			hit <= 1'b1;
 			//write data to cache
-			for(i = 0; i < 4; i = i +1)
-			begin
-				data_memory[i][index] <= data_holder[i];
-			end
+			data_memory[index] <= data_holder;
+			//for(i = 0; i < 4; i = i +1)
+			//begin
+			//	data_memory[i][index] <= data_holder[i];
+			//end
 			//data_memory[index] = data_holder; 
 			//write data to memory - or - set “dirty” bit 
 		end
@@ -307,23 +312,23 @@ begin : OUTPUT_LOGIC
 			//data_memory[index] = data_holder; 
 			//write data to memory - or - set “dirty” bit
 		end
-		OUTPUT_BUS:
-		begin
-			// ASSUMPTION: Data depth is 4 bytes. Needs 4 clock cycles for each transfer.
-			// data_bus = data_holder[count];
-			// make sure the counter reset is turned off.
-			if(counter_reset == 1'b1)
-			begin
-				counter_reset <= 1'b0;
-			end
-			// If the counter reached 4, the data transfer is complete
-			// so reset the counter
-			if(count == 1'b0011)
-			begin
-				$display("RESETING COUNTER");
-				counter_reset = 1'b1;
-			end
-		end
+//		OUTPUT_BUS:
+//		begin
+//			// ASSUMPTION: Data depth is 4 bytes. Needs 4 clock cycles for each transfer.
+//			// data_bus = data_holder[count];
+//			// make sure the counter reset is turned off.
+//			if(counter_reset == 1'b1)
+//			begin
+//				counter_reset <= 1'b0;
+//			end
+//			// If the counter reached 4, the data transfer is complete
+//			// so reset the counter
+//			if(count == 1'b0011)
+//			begin
+//				$display("RESETING COUNTER");
+//				counter_reset = 1'b1;
+//			end
+		//end
 		default:
 		begin
 		end
@@ -331,88 +336,5 @@ begin : OUTPUT_LOGIC
 end
 
 endmodule
-
-
-
-// // read logic
-// always @ (posedge clock)
-// begin
-// 	if(read && !write && oe)
-// 	begin
-// 		if(~valid_bits[index])	// cache miss
-// 			begin
-// 			hit = 1'b0;
-// 			// stall cpu - DONT CARE
-// 			// read cache line from memory - HOW???
-// 			// set valid bit
-// 			valid_bits[index] = 1'b1;
-// 			// write Tag bits
-// 			tags[index] = tag;
-// 			// deliver data to CPU - IN OUTPUT???
-// 			data_holder = data_memory[index];
-// 			end
-// 		else if (tags[index] == tag) // tag bits match (HIT!)
-// 			begin
-// 			// deliver data to CPU
-// 			data_holder = data_memory[index];
-// 			hit = 1'b1;
-// 			end
-// 		else // another miss, occupied by another 
-// 			begin
-// 			hit = 1'b0;
-// 			// stall CPU
-// 			// cast out existing cache line (“victim”)
-// 			// read cache line from memory
-// 			// write Tag bits
-// 			tags[index] = tag;
-// 			// deliver data to CPU
-// 			data_holder = data_memory[index];
-// 			end
-// 	end
-// end
-// 
-// // write logic
-// always @ (posedge clock)
-// begin
-// 	if(write && !read && !oe)
-// 	begin
-// 		data_holder = data_bus; //read data from data bus
-// 		if(valid_bits[index])	//if Valid bit set /* slot occupied */
-// 				begin
-// 					if (tags[index] == tag) //if Tag bits match /* cache hit! */
-// 						begin
-// 						hit = 1'b1;
-// 						//write data to cache
-// 						data_memory[index] = data_holder; 
-// 						//write data to memory - or - set “dirty” bit for cache line
-// 						end
-// 					else //else /* occupied by another */
-// 						begin
-// 						hit = 1'b0;
-// 						//stall CPU
-// 						//cast out existing cache line (“victim”)
-// 						//read cache line from memory
-// 						//write Tag bits
-// 						tags[index] = tag;
-// 						//write data to cache
-// 						data_memory[index] = data_holder; 
-// 						//write data to memory - or - set “dirty” bit for cache line
-// 						end
-// 				end
-// 				else /* slot empty */
-// 					begin
-// 					hit = 1'b0;
-// 					//stall CPU
-// 					//read cache line from memory
-// 					//write Tag bits
-// 					tags[index] = tag;
-// 					//set Valid bit
-// 					valid_bits[index] = 1'b1;
-// 					//write data to cache
-// 					data_memory[index] = data_holder; 
-// 					//write data to memory - or - set “dirty” bit for cache line
-// 					end
-// 	end
-// end
 
 

@@ -19,8 +19,9 @@ wire hit;
 //bidirectional variables
 wire [7:0] data_bus;
 // For waveform purposes
-wire [7:0] state;
-wire [3:0] count;
+wire [5:0] state;
+//wire [3:0] count;
+//wire [3:0] count;
 
 cache our_cache(
 				clock,
@@ -31,8 +32,7 @@ cache our_cache(
 				address_bus,
 				hit,
 				data_bus,
-				state,
-				count
+				state
 			   );
 
 
@@ -63,12 +63,12 @@ initial
 	#1 address_bus = 4'h0001;
 	#1 data_holder = 8'b11111111;
 	#4 write = 1'b1;
-	#2 data_holder = 8'b00010001;
-	#5 data_holder = 8'b00100010;
-	#5 data_holder = 8'b00110011;
-	#5 write = 1'b0;
+	//#4 data_holder = 8'b00010001;
+	//#10 data_holder = 8'b00100010;
+	//#10 data_holder = 8'b00110011;
+	#10 write = 1'b0;
 	
-	#20 oe = 1'b1;
+	#15 oe = 1'b1;
 	#1 address_bus = 4'h0001;
 	#1 read = 1'b1;
 	

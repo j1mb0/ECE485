@@ -30,11 +30,13 @@ module cache(
 // Cache Parameters
 parameter CACHE_LINES = 16;
 parameter ADDRESS_BUS_WIDTH = 16;
-parameter INDEX_WIDTH = 8;
+parameter INDEX_WIDTH = 4;
 parameter DATA_BUS_WIDTH = 8;
+parameter BYTE_SELECT_WIDTH = 2;
+parameter TAG_WIDTH = ADDRESS_BUS_WIDTH  - (INDEX_WIDTH + BYTE_SELECT_WIDTH);
 // Assumption
-parameter CACHE_SIZE = 2**INDEX_WIDTH;
-parameter CACHE_LINE_SIZE = CACHE_SIZE / CACHE_LINES; // 256 / 16 = 16 bytes 
+parameter CACHE_SIZE = 2**(INDEX_WIDTH + BYTE_SELECT_WIDTH);
+parameter CACHE_LINE_SIZE = CACHE_SIZE / CACHE_LINES; // 64 / 16 = 4 bytes 
 // FIGURE OUT --
 // I always assumed data bus determined how deep each memory location is. 
 // For example, if you have a 16 bit address bus, that yields 131071 memory 
@@ -65,9 +67,9 @@ reg hit;
 // ----- Internal Constraints -----
 
 parameter NUMSTATES = 6;
-parameter DATA_BYTE_SIZE = 4;
-parameter TAG_WIDTH = 16 - 8 - 1;
-parameter CLKS_PER_TRANSFER = DATA_BYTE_SIZE;
+//parameter DATA_BYTE_SIZE = 4;
+
+//parameter CLKS_PER_TRANSFER = DATA_BYTE_SIZE;
 parameter 	WAIT 		= 8'b000001,
 			FETCH_DATA 	= 8'b000010,
 			//READ_BUS 	= 8'b00000100,
@@ -87,25 +89,25 @@ integer i;
 integer dumb_counter = 0;
 
 // counter related
-// wire	[3:0] count;
-// reg 	counter_reset;
-// counter my_counter(clock, counter_reset, count);
+wire	[3:0] count;
+reg 	counter_reset;
+counter my_counter(clock, counter_reset, count);
 
-reg [7:0] data_holder ;	// [DATA_BYTE_SIZE-1:0]
+reg [7:0] data_holder;	// [DATA_BYTE_SIZE-1:0]
 
 //reg	[NUMSTATES-1:0] state; // Seq part of the FSM
 //wire[NUMSTATES-1:0] next_state; // Combo part of FSM	
 
 //cache memory related
-reg  [CACHE_SIZE-1:0] valid_bits;
-reg  [TAG_WIDTH-1:0] tags [0:CACHE_SIZE-1];
-reg  [7:0]  data_memory [0:CACHE_SIZE-1];  //[DATA_BYTE_SIZE-1:0]
+reg  [CACHE_LINES-1:0] valid_bits;		// one valid bit per cache line
+reg  [TAG_WIDTH-1:0] tags [0:CACHE_LINES-1][0:CACHE_LINE_SIZE-1];
+reg  [7:0]  data_memory [0:CACHE_LINES-1][0:CACHE_LINE_SIZE-1];  //[DATA_BYTE_SIZE-1:0]
 
 
 // ------ Set initial state for outputs ---
 initial begin
 	hit <= 1'b0;
-//	counter_reset <= 1'b0;
+	counter_reset <= 1'b0;
 end
 
 // ------ Code Start Here ------
@@ -113,35 +115,36 @@ end
 assign data_bus = (read && oe && !write) ? data_holder : 8'bz; 
 
 // Parse Address bus for cache components.
-always@(address_bus)
-begin
-	tag = address_bus[(ADDRESS_BUS_WIDTH):INDEX_WIDTH + 2];
-	index = address_bus[(ADDRESS_BUS_WIDTH - TAG_WIDTH):2];
-	byte_select = address_bus[2:0];
-end
+//always@(address_bus)
+//begin
+//	tag = address_bus[(ADDRESS_BUS_WIDTH):INDEX_WIDTH + 2];
+//	index = address_bus[(ADDRESS_BUS_WIDTH - TAG_WIDTH):2];
+//	byte_select = address_bus[2:0];
+//end
 
-assign next_state = cache_fsm(state, read, write);
+assign next_state = cache_fsm(state, read, write, count);
 
 // ----- Function for Combo Logic -------
 function [NUMSTATES-1:0] cache_fsm;
 	//inputs 
 	input [NUMSTATES-1:0] 	curstate;
-//	input [3:0]		count;
 	input read;
 	input write;
+	input [3:0]	the_count;
 	
 	case(curstate)
 		WAIT:
 		begin
-			if(read && !write)
+			$display("WAIT STATE");
+			if(read == 1'b1 && write == 1'b0)
 			begin
-				$display("read value = %b", read);
+				//$display("read value = %b", read);
 				cache_fsm = FETCH_DATA;
-				$display("next state = %b", cache_fsm);
+				//$display("next state = %b", cache_fsm);
 			end
-			else if(!read && write)
+			else if(read == 1'b0 && write == 1'b1)
 			begin
-				$display("write value = %b", write);
+				//$display("write value = %b", write);
 				//dumb_counter = 0;
 				cache_fsm = FETCH_DATA;
 			end
@@ -153,13 +156,19 @@ function [NUMSTATES-1:0] cache_fsm;
 		end
 		FETCH_DATA:
 		begin
-			if(read && !write)
+			$display("FETCH DATA STATE");
+			tag = address_bus[ADDRESS_BUS_WIDTH-1:INDEX_WIDTH + BYTE_SELECT_WIDTH];
+			index = address_bus[(ADDRESS_BUS_WIDTH - TAG_WIDTH):BYTE_SELECT_WIDTH];
+			byte_select = address_bus[BYTE_SELECT_WIDTH-1:0];
+			if(read == 1'b1 && write == 1'b0)	//read logic
 			begin
+				$display("READ");
+				$display("Checking for data with index = %b, tag = %b, and valid bit = %b", index, tags[index][byte_select], valid_bits[index]);
 				if(~valid_bits[index])	// cache miss
 				begin
 					cache_fsm = READ_MISS;
 				end
-				else if (tags[index] == tag) // tag bits match (HIT!)
+				else if (tags[index][byte_select] == tag) // tag bits match (HIT!)
 				begin
 					cache_fsm = READ_HIT;
 				end
@@ -168,11 +177,13 @@ function [NUMSTATES-1:0] cache_fsm;
 					cache_fsm = READ_MISS;
 				end
 			end
-			if(!read && write)
+			else if(read == 1'b0 && write == 1'b1)	//write logic
 			begin
+				$display("WRITE");
 				if(valid_bits[index])	//if Valid bit set /* slot occupied */
 				begin
-					if (tags[index] == tag) //if Tag bits match /* cache hit! */
+					$display("Testing tags[index] %b == tag %b", tags[index][byte_select], tag);
+					if (tags[index][byte_select] == tag) //if Tag bits match /* cache hit! */
 					begin
 						cache_fsm = WRITE_HIT;
 					end
@@ -185,7 +196,12 @@ function [NUMSTATES-1:0] cache_fsm;
 				begin
 					cache_fsm = WRITE_MISS;
 				end
-			end
+			end 
+			else
+			begin
+				$display("BACK TO WAIT");
+				cache_fsm = WAIT;
+				end
 		end
 //		READ_BUS:
 //		begin
@@ -200,20 +216,25 @@ function [NUMSTATES-1:0] cache_fsm;
 //		end
 		READ_HIT:
 		begin
+			$display("READ HIT");
 			// deliver data to CPU
 			cache_fsm = WAIT;
 		end
 		READ_MISS:
 		begin
+			$display("READ MISS");
 			cache_fsm = WAIT;
 		end
 		WRITE_HIT:
 		begin
 			//write data to cache
+			$display("WRITE HIT");
 			cache_fsm = WAIT;
 		end
 		WRITE_MISS:
 		begin
+			$display("WRITE MISS");
+			//$display("the_count = %b", the_count);
 			cache_fsm = WAIT;
 		end
 //		OUTPUT_BUS:
@@ -234,7 +255,7 @@ function [NUMSTATES-1:0] cache_fsm;
 endfunction
 		
 // ----- Seq Logic ------
-always @ (negedge clock or reset)
+always @ (posedge clock or posedge reset)
 begin
 	if (reset == 1'b1) 
 	begin
@@ -245,18 +266,21 @@ begin
 	end
 end
 
-// ---- Output Logic ----
-always @ (posedge clock or negedge clock)
+// ---- Output/Input Logic ----
+always @ (posedge clock)
 begin : OUTPUT_LOGIC
 	case(state)
 		WAIT:
 		begin
-			
+			data_holder = 8'hBA;
 		end
 		FETCH_DATA:
 		begin
+			
 			data_holder = data_bus;
-			$display("read %b off the bus", data_holder);
+			$display("FETCHING tag %b for index %b with byte select %b and data %b", tag, index, byte_select, data_holder);
+			counter_reset = 1'b1;
+			// $display("read %b off the bus ", data_holder);
 		end
 //		READ_BUS:
 //		begin
@@ -279,7 +303,7 @@ begin : OUTPUT_LOGIC
 		READ_HIT:
 		begin
 			// deliver data to CPU
-			data_holder <= data_memory[index];
+			data_holder <= data_memory[index][byte_select];
 			//for(i = 0; i < 4; i = i +1)
 			//begin
 			//	data_holder[i] <= data_memory[i][index];
@@ -301,7 +325,7 @@ begin : OUTPUT_LOGIC
 		begin
 			hit <= 1'b1;
 			//write data to cache
-			data_memory[index] <= data_holder;
+			data_memory[index][byte_select] <= data_holder;
 			//for(i = 0; i < 4; i = i +1)
 			//begin
 			//	data_memory[i][index] <= data_holder[i];
@@ -312,15 +336,22 @@ begin : OUTPUT_LOGIC
 		WRITE_MISS:
 		begin
 			hit <= 1'b0;
+			//if(counter_reset == 1'b1)
+			//begin
+			//	counter_reset = 1'b0;
+			//end
+			//$display("count is %b", count);
 			//stall CPU
 			//cast out existing cache line (“victim”)
 			// ASSUMPTION: Write Through policy - Memory is up-to-date
 			//read cache line from memory
-			
 			//write Tag bits
-			tags[index] = tag;
+			$display("In WRITE MISS, saving tag and data");
+			tags[index][byte_select] = tag;
 			//write data to cache
-			data_memory[index] = data_holder; 
+			data_memory[index][byte_select] = data_holder; 
+			// set valid bit
+			valid_bits[index] = 1'b1;
 			//write data to memory - or - set “dirty” bit
 		end
 //		OUTPUT_BUS:

@@ -39,7 +39,7 @@ cache our_cache(
 //intialize inputs
 initial
 begin
-	clock 		= 1'b0;
+	clock 		= 1'b1;
 	reset 	 	= 1'b0; 
 	write 	= 1'b0; 
 	read		= 1'b0;
@@ -57,22 +57,26 @@ always
 //test things
 initial
   begin
-	#1 reset = 1'b1;
-	#6 reset = 1'b0;
-	#1 oe = 1'b0;
-	#1 address_bus = 4'h0001;
-	#1 data_holder = 8'b11111111;
-	#4 write = 1'b1;
-	//#4 data_holder = 8'b00010001;
-	//#10 data_holder = 8'b00100010;
+	// each write/read takes 3 CLK cycles
+	// pos edge clock happens at any multiple of ten
+	#1 reset = 1'b1; 
+	#15 reset = 1'b0;
+	#1 oe = 1'b0;					//7
+	#1 address_bus = 16'h0001;		//8
+	data_holder = 8'b11111111;				
+	#1 write = 1'b1;				// 9 1st write
+	#30 address_bus = 16'h1010;	
+	data_holder = 8'b00010001; 		// 39 2nd write
+	#30 address_bus = 16'h0220;
+	data_holder = 8'b00100010;	// 69 3rd Write
 	//#10 data_holder = 8'b00110011;
-	#20 write = 1'b0;
-	
-	#15 oe = 1'b1;
-	#1 address_bus = 4'h0001;
-	#1 read = 1'b1;
-	
-	#20 oe = 1'b0;
+	#15 write = 1'b0;				// 84 end writes
+	#2 oe = 1'b1;					// 87 start reads
+	#1 address_bus = 16'h0001;		// 88 1st read
+	#1 read = 1'b1;					// 89 
+	#30 address_bus = 16'h1010;		// 119 2nd read
+	#30 address_bus = 16'h0220;		// 119 2nd read
+	#60 oe = 1'b0;
 	#200 $finish;
   end
   
